@@ -10,4 +10,3 @@ if __name__ == "__main__":
     # print(args)
     recognizer = recognizer_utils.create_recognizer(args)
 
-
