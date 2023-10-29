@@ -21,6 +21,7 @@ if __name__ == "__main__":
         recognizer,
         DATA_PATH + "0.wav"
     )
+    print(result.result.text)
 
 
 
