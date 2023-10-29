@@ -1,5 +1,6 @@
 from pathlib import Path
 import sherpa_onnx
+import librosa
 
 def assert_file_exists(filename: str):
     assert Path(filename).is_file(), (
@@ -92,3 +93,13 @@ def create_recognizer(args) -> sherpa_onnx.OfflineRecognizer:
         raise ValueError("Please specify at least one model")
 
     return recognizer
+
+def get_result(
+        recognizer:sherpa_onnx.OfflineRecognizer,
+        file_path:str,
+):
+    input_stream = recognizer.create_stream()
+    samples, sample_rate = librosa.load(file_path, sr=None, mono=True)
+    input_stream.accept_waveform(sample_rate, samples)
+    recognizer.decode_stream(input_stream)
+    return input_stream

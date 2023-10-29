@@ -5,7 +5,6 @@ import utils.recognizer_utils as recognizer_utils
 import utils.wave_utils as wave_utils
 
 if __name__ == "__main__":
-    print("Hello")
     args = argument_par.get_args()
     args.tokens="./sherpa-onnx-paraformer-zh-2023-03-28/tokens.txt"
     args.paraformer="./sherpa-onnx-paraformer-zh-2023-03-28/model.int8.onnx"
