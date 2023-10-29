@@ -4,7 +4,8 @@ import utils.argument_par as argument_par
 import utils.recognizer_utils as recognizer_utils
 import utils.wave_utils as wave_utils
 
-MODEL_PATH = "./sherpa-onnx-paraformer-zh-2023-03-28/"
+MODEL_PATH = "./my_models/"
+DATA_PATH = "./my_dataset/test_wavs/"
 use_int8 = False
 
 if __name__ == "__main__":
@@ -18,7 +19,7 @@ if __name__ == "__main__":
 
     result = recognizer_utils.get_result(
         recognizer,
-        "./sherpa-onnx-paraformer-zh-2023-03-28/test_wavs/my_recording.wav"
+        DATA_PATH + "0.wav"
     )
 
 
