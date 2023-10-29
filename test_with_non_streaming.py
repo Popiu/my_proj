@@ -7,7 +7,7 @@ if __name__ == "__main__":
     print("Hello")
     args = argument_par.get_args()
     args.tokens="./sherpa-onnx-paraformer-zh-2023-03-28/tokens.txt"
-    args.paraformer="./sherpa-onnx-paraformer-zh-2023-03-28/model.int8.onnx"
+    args.paraformer="./sherpa-onnx-paraformer-zh-2023-03-28/model.onnx"
     print(args)
     recognizer = recognizer_utils.create_recognizer(args)
     input_stream = recognizer.create_stream()
