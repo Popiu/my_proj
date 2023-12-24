@@ -6,7 +6,7 @@ import utils.wave_utils as wave_utils
 
 MODEL_PATH = "./my_models/"
 DATA_PATH = "./my_dataset/test_wavs/"
-use_int8 = False
+use_int8 = True
 
 if __name__ == "__main__":
     args = argument_par.get_args()
