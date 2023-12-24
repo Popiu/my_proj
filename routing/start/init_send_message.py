@@ -1,11 +1,15 @@
 class Node:
     def __init__(self, node_id):
         self.rreq_count = 0
+        self.routing_table = {}
 
     def send_packet(self, packet, dest_addr):
         # send packet
         pass
 
+    def send_normal_packet(self):
+        # send normal packet
+        pass
     def send_rreq(self):
         # send RREQ packet
         self.rreq_count += 1
@@ -22,6 +26,10 @@ class Node:
 
     def send_rerr(self):
         # send RERR packet
+        pass
+
+    def on_receive_rreq(self):
+        # if receive RREQ packet
         pass
 
 if __name__ == '__main__':
