@@ -14,7 +14,7 @@ class Node:
         dest_addr = 'n10'
         hop_count = 0
         rreq = 'RREQ %d %s %s %d' % (rreq_id, src_addr, dest_addr, hop_count)
-        self.send_packet(rreq, dest_addr)
+        self.send_packet(rreq, 'all')
 
     def send_rrep(self):
         # send RREP packet
