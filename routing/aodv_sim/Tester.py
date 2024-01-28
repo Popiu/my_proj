@@ -23,6 +23,3 @@ class tester:
         # Listen indefinitely for user inputs
         while (True):
             command = input(prompt)
-
-            # {'help': self.help,
-            #  'run_test_script': self.run_test_script}.get(command, self.default)()
