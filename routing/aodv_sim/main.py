@@ -11,5 +11,7 @@ if __name__ == '__main__':
     with open(test_config_filename, 'r') as f:
         test_config = json.load(f)
 
-    tester = Tester(test_config)
+    tester = Tester(
+        test_config, log_dir=ABS_PATH
+    )
     tester.main()
