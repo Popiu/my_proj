@@ -135,3 +135,6 @@ class Client(threading.Thread):
                     if command_type == "send":
                         self._to_log("Sending command, send to {}, {}".format(command_list[1], command_list[2]))
                         self.send_message(bytes([int(command_list[1])]), command_list[2])
+                elif r is self.comm_sock:
+                    command, _ = self.comm_sock.recvfrom(100)
+                    self._to_log("Receive packet, {}".format(str(command)))
