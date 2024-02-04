@@ -54,18 +54,24 @@ class Client(threading.Thread):
             f.write(log_content)
 
     def run(self):
-        self.listener_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.listener_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.listener_sock.bind(('localhost', self.comm_port))
-        self.listener_sock.setblocking(False)
+        self.comm_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.comm_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.comm_sock.bind(('localhost', self.comm_port))
+        self.comm_sock.setblocking(False)
 
-        self.aodv_listener_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.aodv_listener_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.aodv_listener_sock.bind(('localhost', self.control_port))
-        self.aodv_listener_sock.setblocking(False)
+        self.comm_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.control_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.control_sock.bind(('localhost', self.control_port))
+        self.control_sock.setblocking(False)
 
         self._to_log("Start listening on port: " + str(self.comm_port) + "\n")
         self._to_log("Start listening on port: " + str(self.control_port) + "\n")
         self._to_log("Successfully start the client.\n")
+
+        # get input
+        inputs = [self.comm_sock, self.comm_sock]
+
         while True:
-            a = 1
+            readable, _, _ = select.select(inputs, outputs, inputs)
+            for r in readable:
+                if r is self.listener_sock:

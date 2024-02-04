@@ -31,6 +31,13 @@ class Tester:
             client.start()
         return node_list
 
+    def send_control_message(self, node, msg_type, contents):
+        if msg_type=="send":
+            self.node_list[node].control_sock.sendto(
+                "send" + ":" + contents,
+                0, ('localhost', self.node_list[node].control_port)
+            )
+
     def main(self):
         # Initialize the client
         self.node_list = self.init_client()
@@ -49,6 +56,10 @@ class Tester:
                 node_id_A = int(command[1])
                 node_id_B = int(command[2])
                 message = command[3]
-                # self.send_message(node_id_A, node_id_B, message)
+                contents = str(node_id_B) + ":" + message
+                self.send_control_message(
+                    node_id_A, msg_type="send",
+                    contents=contents
+                )
             else:
                 print("Invalid command.")
