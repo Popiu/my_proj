@@ -44,14 +44,22 @@ class Client(threading.Thread):
             message_content = bytes([0]) + next_hop_ip + self.address + message
             self.send_implementation(message_content)
         else:
-            # send RREQ
-            pass
+            rreq_content = self.RREQ_CONTENT(address)
+            self.send_implementation(rreq_content)
+
+    def RREQ_CONTENT(self, DST_ADDR: bytes):
+        MSG_TYPE = bytes([1])
+        SRC_ADDR = self.address
+        MSG_SEQ = bytes([0])
+        DST_SEQ = bytes([0])
+        HOP_CNT = bytes([0])
+        DST_ADDR = DST_ADDR
+        return MSG_TYPE + SRC_ADDR + MSG_SEQ + DST_SEQ + HOP_CNT + DST_ADDR
+
 
     # # Only for simulation, the implementation with LoRa should be different
     def send_implementation(self, message: bytes):
         self.channel_sock.sendto(message, 0, ('localhost', self.channel_port))
-
-    #
 
     def _to_log(self, log_content: str):
         time_stamp = time.strftime("%Y-%m-%d: %H:%M:%S", time.localtime())
@@ -126,3 +134,4 @@ class Client(threading.Thread):
                     command_type = command_list[0]
                     if command_type == "send":
                         self._to_log("Sending command, send to {}, {}".format(command_list[1], command_list[2]))
+                        self.send_message(bytes([int(command_list[1])]), command_list[2])

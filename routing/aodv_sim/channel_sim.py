@@ -32,4 +32,7 @@ class ChannelSim(threading.Thread):
         while True:
             readable, _, _ = select.select(inputs, [], inputs)
             for r in readable:
-                print(inputs.index(r))
+                src_node_id = inputs.index(r)
+                command, _ = r.recvfrom(100)
+                print(str(command))
+                self._to_log(str(command))
