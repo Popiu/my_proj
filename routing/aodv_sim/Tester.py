@@ -33,8 +33,9 @@ class Tester:
 
     def send_control_message(self, node, msg_type, contents):
         if msg_type=="send":
+            send_contents = "send" + ":" + contents
             self.node_list[node].control_sock.sendto(
-                "send" + ":" + contents,
+                send_contents.encode("utf-8"),
                 0, ('localhost', self.node_list[node].control_port)
             )
 
