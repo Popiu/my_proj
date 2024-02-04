@@ -3,6 +3,7 @@
 import os
 import time
 from aodv_client import Client
+from channel_sim import ChannelSim
 
 
 class Tester:
@@ -23,13 +24,21 @@ class Tester:
             node_config = {
                 "comm_port": self.test_config["comm_ports"][i],
                 "control_port": self.test_config["control_ports"][i],
+                "channel_port": self.test_config["channel_ports"][i],
                 "log_dir": os.path.join(self.log_dir, self.time_stamp, "node_" + str(i))
             }
             node_address = bytes([self.test_config["node_addresses"][i]])
             client = Client(node_address, node_config)
             node_list.append(client)
             client.start()
+            # client.join()
         return node_list
+
+    def init_channels(self):
+        log_dir = os.path.join(self.log_dir, self.time_stamp, "channel_info")
+        self.channels = ChannelSim(self.test_config, self.node_list, log_dir=log_dir)
+        self.channels.start()
+
 
     def send_control_message(self, node, msg_type, contents):
         if msg_type=="send":
@@ -42,6 +51,9 @@ class Tester:
     def main(self):
         # Initialize the client
         self.node_list = self.init_client()
+
+        # Initialize the channels
+        self.init_channels()
 
         # Set the prompt
         prompt = "TESTER" + "> "

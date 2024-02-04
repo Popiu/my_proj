@@ -26,26 +26,31 @@ class Client(threading.Thread):
         self.client_config = client_config
         self.comm_port = client_config["comm_port"]
         self.control_port = client_config["control_port"]
+        self.channel_port = client_config["channel_port"]
         self.log_dir = client_config["log_dir"]
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
         self.log_file = self.log_dir + "/log.txt"
 
-    # def send_message(
-    #         self, address: bytes, message: bytes
-    # ):
-    #     assert len(address) == 1  # one byte
-    #     if address in self.routing_table.routing_dict:
-    #         # send message
-    #         next_hop_ip = self.routing_table.routing_dict[address].next_hop
-    #         self.send_implementation(next_hop_ip, bytes([0]) + message)
-    #     else:
-    #         # send RREQ
-    #         pass
-    #
+        self._bind_ports()
+
+    def send_message(
+            self, address: bytes, message: bytes
+    ):
+        assert len(address) == 1  # one byte
+        if address in self.routing_table.routing_dict:
+            # send message
+            next_hop_ip = self.routing_table.routing_dict[address].next_hop
+            message_content = bytes([0]) + next_hop_ip + self.address + message
+            self.send_implementation(message_content)
+        else:
+            # send RREQ
+            pass
+
     # # Only for simulation, the implementation with LoRa should be different
-    # def send_implementation(self, address: bytes, message: bytes):
-    #     self.aodv_listener_sock.sendto(message, 0, ('localhost', self.communication_port))
+    def send_implementation(self, message: bytes):
+        self.channel_sock.sendto(message, 0, ('localhost', self.channel_port))
+
     #
 
     def _to_log(self, log_content: str):
@@ -54,12 +59,14 @@ class Client(threading.Thread):
             f.write("[{}]:\t".format(time_stamp))
             f.write(log_content)
 
-    def run(self):
+    def _bind_ports(self):
         # kill the process that is running binding these commands, print warnings
         find_comm_process = os.popen('lsof -i:{}'.format(self.comm_port))
+        find_channel_process = os.popen('lsof -i:{}'.format(self.channel_port))
         find_control_process = os.popen('lsof -i:{}'.format(self.control_port))
 
         comm_list = find_comm_process.readlines()
+        channel_list = find_channel_process.readlines()
         control_list = find_control_process.readlines()
 
         if len(comm_list) != 0:
@@ -69,23 +76,29 @@ class Client(threading.Thread):
                 "now kill it.\n".format(find_values))
             os.system("kill {}".format(find_values))
 
-        if len(control_list)!= 0:
+        if len(channel_list) != 0:
+            find_values = channel_list[1].split(" ")[2]
+            self._to_log(
+                "Channel port is occupied by process {}, "
+                "now kill it.\n".format(find_values))
+            os.system("kill {}".format(find_values))
+
+        if len(control_list) != 0:
             find_values = control_list[1].split(" ")[2]
             self._to_log(
                 "Control port is occupied by process {}, "
                 "now kill it.\n".format(find_values))
             os.system("kill {}".format(find_values))
 
-        # if find_comm_process!= 0:
-        #     self._to_log("Communication port is occupied, please kill the previous process.\n")
-        #     return
-        # if find_control_process!= 0:
-        #     self._to_log("Control port is occupied, please kill the previous process.\n")
-        #     return
         self.comm_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.comm_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.comm_sock.bind(('localhost', self.comm_port))
         self.comm_sock.setblocking(False)
+
+        self.channel_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.channel_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.channel_sock.bind(('localhost', self.channel_port))
+        self.channel_sock.setblocking(False)
 
         self.control_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.control_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -93,9 +106,12 @@ class Client(threading.Thread):
         self.control_sock.setblocking(False)
 
         self._to_log("Start listening on port: " + str(self.comm_port) + "\n")
+        self._to_log("Start listening on port: " + str(self.channel_port) + "\n")
         self._to_log("Start listening on port: " + str(self.control_port) + "\n")
+
         self._to_log("Successfully start the client.\n")
 
+    def run(self):
         # get input
         inputs = [self.control_sock, self.comm_sock]
         output = []
