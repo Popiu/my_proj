@@ -23,6 +23,7 @@ class Client(threading.Thread):
         self.routing_table = RoutingTab()
         self.seq_no = 0  # maintaining sequence number
         self.rreq_id = 0 # maintaining the rreq id
+        self.rreq_id_list = {}
 
         # Only for simulation
         self.client_config = client_config
@@ -35,6 +36,40 @@ class Client(threading.Thread):
         self.log_file = self.log_dir + "/log.txt"
 
         self._bind_ports()
+    def _process_rreq_msg(self, msg):
+        msg_type = msg[0]
+        src_addr = msg[1]
+        src_seq = msg[2]
+        dst_addr = msg[3]
+        dst_seq = msg[4]
+        hop_cnt = msg[5]
+        rreq_id = msg[6]
+        self._to_log("Receive RREQ from {}".format(src_addr))
+
+        # Discard this RREQ if we have already received this before
+        if (src_addr in self.rreq_id_list.keys()):
+            per_node_list = self.rreq_id_list[src_addr]
+            if rreq_id in per_node_list.keys():
+                self._to_log("Discard this RREQ")
+
+        # This is a new RREQ message. Buffer it first
+        if (src_addr in self.rreq_id_list.keys()):
+            per_node_list = self.rreq_id_list[src_addr]
+        else:
+            per_node_list = dict()
+
+        #
+        # Check if we have a route to the source. If we have, see if we need
+        # to update it. Specifically, update it only if:
+        #
+        # 1. The destination sequence number for the route is less than the
+        #    originator sequence number in the packet
+        # 2. The sequence numbers are equal, but the hop_count in the packet
+        #    + 1 is lesser than the one in routing table
+        # 3. The sequence number in the routing table is unknown
+        #
+        # If we don't have a route for the originator, add an entry
+
 
     def send_message(
             self, address: bytes, message: bytes
@@ -54,14 +89,13 @@ class Client(threading.Thread):
             self.send_implementation(rreq_content)
 
     def RREQ_CONTENT(self, DST_ADDR: bytes, seq_no: int):
-        # TODO: follow the content of the paper
         MSG_TYPE = bytes([1])
         SRC_ADDR = self.address
-        MSG_SEQ = bytes([seq_no])
-        DST_SEQ = bytes([0])
+        SRC_SEQ = bytes([self.seq_no])
+        DST_SEQ = bytes([seq_no])
         HOP_CNT = bytes([0])
-        DST_ADDR = DST_ADDR
-        return MSG_TYPE + SRC_ADDR + MSG_SEQ + DST_SEQ + HOP_CNT + DST_ADDR
+        RREQ_ID = bytes([self.rreq_id])
+        return MSG_TYPE + SRC_ADDR + SRC_SEQ + DST_ADDR + DST_SEQ + HOP_CNT + RREQ_ID
 
 
     # # Only for simulation, the implementation with LoRa should be different
@@ -144,4 +178,8 @@ class Client(threading.Thread):
                         self.send_message(bytes([int(command_list[1])]), command_list[2])
                 elif r is self.comm_sock:
                     command, _ = self.comm_sock.recvfrom(100)
-                    self._to_log("Receive packet, {}".format(str(command)))
+                    command_type = command[0]
+                    if command_type == 1:
+                        self._process_rreq_msg(command)
+                    #     self.routing_table.add_routing_entry(routing_entry(command[1:]))
+                    # self._to_log("Receive packet, {}".format(str(command)))

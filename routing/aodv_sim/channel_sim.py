@@ -31,7 +31,7 @@ class ChannelSim(threading.Thread):
                 distance = (dst_pos[0] - src_pos[0]) ** 2 + (dst_pos[1] - src_pos[1]) ** 2
                 if distance <= self.full_config["max_reach_dist"]:
                     self._to_log(
-                        "Sending message from {} to {}, distance: {}".format(
+                        "Sending message from {} to {}, distance: {}\n".format(
                         src_node_id, dst_node_id, distance
                         )
                     )
@@ -41,6 +41,12 @@ class ChannelSim(threading.Thread):
                         args=(dst_node_id, message, distance)
                     )
                     send_thread.start()
+                else:
+                    self._to_log(
+                        "No sending message from {} to {}, distance: {}. (out of range)\n".format(
+                            src_node_id, dst_node_id, distance
+                        )
+                    )
 
     def send_message_to(self, dst_node_id, message, delay):
         dst_node = self.node_list[dst_node_id]
@@ -59,5 +65,5 @@ class ChannelSim(threading.Thread):
                 src_node_id = inputs.index(r)
                 # broadcast this message to other nodes
                 command, _ = r.recvfrom(100)
-                self._to_log(str(command)+"\n")
+                self._to_log(str(command) + " from node {}".format(src_node_id)+"\n")
                 self.send_message(src_node_id, command)
