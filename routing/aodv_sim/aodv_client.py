@@ -21,6 +21,8 @@ class Client(threading.Thread):
         assert len(address) == 1  # one byte
         self.address = address
         self.routing_table = RoutingTab()
+        self.seq_no = 0  # maintaining sequence number
+        self.rreq_id = 0 # maintaining the rreq id
 
         # Only for simulation
         self.client_config = client_config
@@ -44,13 +46,18 @@ class Client(threading.Thread):
             message_content = bytes([0]) + next_hop_ip + self.address + message
             self.send_implementation(message_content)
         else:
-            rreq_content = self.RREQ_CONTENT(address)
+            self.seq_no = self.seq_no + 1
+            self.rreq_id = self.rreq_id + 1
+
+            rreq_content = self.RREQ_CONTENT(address, 255)  # 255 means -1
+
             self.send_implementation(rreq_content)
 
-    def RREQ_CONTENT(self, DST_ADDR: bytes):
+    def RREQ_CONTENT(self, DST_ADDR: bytes, seq_no: int):
+        # TODO: follow the content of the paper
         MSG_TYPE = bytes([1])
         SRC_ADDR = self.address
-        MSG_SEQ = bytes([0])
+        MSG_SEQ = bytes([seq_no])
         DST_SEQ = bytes([0])
         HOP_CNT = bytes([0])
         DST_ADDR = DST_ADDR
