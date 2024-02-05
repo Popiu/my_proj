@@ -20,7 +20,7 @@ class Client(threading.Thread):
         threading.Thread.__init__(self)
         assert len(address) == 1  # one byte
         self.address = address
-        self.routing_table = RoutingTab()
+        self.routing_table = dict()
         self.seq_no = 0  # maintaining sequence number
         self.rreq_id = 0 # maintaining the rreq id
         self.rreq_id_list = {}
@@ -70,14 +70,25 @@ class Client(threading.Thread):
         #
         # If we don't have a route for the originator, add an entry
 
+        if src_addr in self.routing_table.keys():
+            pass
+        else:
+            self.routing_table[src_addr] = {
+                'Destination': str(src_addr),
+                'Next-Hop': str(sender),
+                'Seq-No': str(orig_seq_no),
+                'Hop-Count': str(hop_count),
+                'Status': 'Active'
+            }
+
 
     def send_message(
             self, address: bytes, message: bytes
     ):
         assert len(address) == 1  # one byte
-        if address in self.routing_table.routing_dict:
+        if address in self.routing_table.keys():
             # send message
-            next_hop_ip = self.routing_table.routing_dict[address].next_hop
+            next_hop_ip = self.routing_table[address].next_hop
             message_content = bytes([0]) + next_hop_ip + self.address + message
             self.send_implementation(message_content)
         else:
