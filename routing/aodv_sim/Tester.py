@@ -40,7 +40,9 @@ class Tester:
         self.channels.start()
 
 
-    def send_control_message(self, node, msg_type, contents):
+    def send_control_message(
+            self, node: int, msg_type: str, contents: str
+    ):
         if msg_type=="send":
             send_contents = "send" + ":" + contents
             self.node_list[node].control_sock.sendto(

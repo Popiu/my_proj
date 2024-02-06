@@ -5,18 +5,17 @@ import os
 import re
 import time
 
-
 # protocol type
 # 0: regular
 # 1: RREQ
-# msg_type(1 byte) send_addr(1 byte) receiver(1 byte) rreq_id(1 byte) src_addr(1 byte) src_seq(1 byte) dst_addr(1 byte) dst_seq(1 byte) hop_cnt(1 byte)
+# msg_type(1 byte) send_addr(1 byte) receiver(1 byte) rreq_id(1 byte) rreq_src_addr(1 byte) src_seq(1 byte) dst_addr(1 byte) dst_seq(1 byte) hop_cnt(1 byte)
 # 2: RREP
 # msg_type(1 byte) send_addr(1 byte) receiver(1 byte)
 # 3: RERR
 
 
-AODV_PATH_DISCOVERY_TIME    =   30
-AODV_ACTIVE_ROUTE_TIMEOUT   =   300
+AODV_PATH_DISCOVERY_TIME = 30
+AODV_ACTIVE_ROUTE_TIMEOUT = 300
 
 
 class Client(threading.Thread):
@@ -26,10 +25,12 @@ class Client(threading.Thread):
         threading.Thread.__init__(self)
         assert len(address) == 1  # one byte
         self.address = address
+        self.address_str = str(int.from_bytes(address, byteorder='big'))
         self.routing_table = dict()
         self.seq_no = 0  # maintaining sequence number
-        self.rreq_id = 0 # maintaining the rreq id
+        self.rreq_id = 0  # maintaining the rreq id
         self.rreq_id_list = {}
+        self.pending_msg_q = []
 
         # Only for simulation
         self.client_config = client_config
@@ -42,6 +43,7 @@ class Client(threading.Thread):
         self.log_file = self.log_dir + "/log.txt"
 
         self._bind_ports()
+
     def _process_rreq_msg(self, msg):
         msg_type = msg[0]
         sender_addr = msg[1]
@@ -122,14 +124,15 @@ class Client(threading.Thread):
         else:
             pass
             # rebroadcast rreq
-    def aodv_process_path_discovery_timeout(self, node, rreq_id):
 
-        # Remove the buffered RREQ_ID for the given node
-        if node in self.rreq_id_list.keys():
-            node_list = self.rreq_id_list[node]
-            per_node_rreq_id_list = node_list['RREQ_ID_List']
-            if rreq_id in per_node_rreq_id_list.keys():
-                per_node_rreq_id_list.pop(rreq_id)
+    def aodv_process_path_discovery_timeout(
+            self, address: str, rreq_id: int
+    ):
+        if address in self.rreq_id_list.keys():
+            per_node_list = self.rreq_id_list[address]
+            if rreq_id in per_node_list.keys():
+                per_node_list.pop(rreq_id)
+
     def aodv_restart_route_timer(self, route, create):
         if (create == False):
             timer = route['Lifetime']
@@ -141,6 +144,7 @@ class Client(threading.Thread):
         route['Lifetime'] = timer
         route['Status'] = 'Active'
         timer.start()
+
     def aodv_send_rrep(self, rrep_dest, rrep_nh, rrep_src, rrep_int_node, dest_seq_no, hop_count):
         #     def aodv_send_rrep(self, rrep_dest, rrep_nh, rrep_src, rrep_int_node, dest_seq_no, hop_count):
         #         # orig, sender, dest, dest, 0, 0
@@ -159,41 +163,65 @@ class Client(threading.Thread):
         message = MSG_TYPE + SENDER_ADDR + DST_ADDR + DST_SEQ + SRC_DST + HOP_CNT
 
         self.send_implementation(message)
+
     def aodv_process_route_timeout(self, route):
         # Remove the route from the routing table
         key = route['Destination']
         self.routing_table.pop(key)
 
         self._to_log("aodv_process_route_timeout: removing " + key + " from the routing table.")
-    def send_message(
-            self, address: bytes, message: bytes
+
+    def aodv_send_message(
+            self, address: str, message: str
     ):
-        assert len(address) == 1  # one byte
+        addr_byte = bytes([int(address)])
+        message_content = bytes([0]) + self.address + addr_byte + message.encode('utf-8')
         if address in self.routing_table.keys():
-            # send message
-            next_hop_ip = self.routing_table[address].next_hop
-            message_content = bytes([0]) + next_hop_ip + self.address + message
-            self.send_implementation(message_content)
+            next_hop = self.routing_table[address]['Next-Hop']
+            self.send_implementation(next_hop, message_content)
+            self._to_log(
+                "Send message to " + address + " through " + next_hop + ", since it is in the routing table.\n")
         else:
-            self.seq_no = self.seq_no + 1
-            self.rreq_id = self.rreq_id + 1
+            self.aodv_send_rreq(address, 0)
+            self._to_log("Broadcast RREQ to find the route to {}.\n".format(address))
 
-            rreq_content = self.RREQ_CONTENT(address, 0)
+            # Buffer the message and resend it once RREP is received
+            self.pending_msg_q.append(message)
 
-            self.send_implementation(rreq_content)
+    def aodv_send_rreq(
+            self, dst_addr: str, seq_no: int
+    ):
+        self.seq_no = self.seq_no + 1
+        self.rreq_id = self.rreq_id + 1
 
-    def RREQ_CONTENT(self, DST_ADDR: bytes, seq_no: int):
-        MSG_TYPE = bytes([1])
-        SRC_ADDR = self.address
-        SRC_SEQ = bytes([self.seq_no])
-        DST_SEQ = bytes([seq_no])
-        HOP_CNT = bytes([0])
-        RREQ_ID = bytes([self.rreq_id])
-        return MSG_TYPE + SRC_ADDR + RREQ_ID + SRC_ADDR + SRC_SEQ + DST_ADDR + DST_SEQ + HOP_CNT
+        msg_type = bytes([1])
+        sender_addr = self.address
+        recv_addr = bytes([255])
+        rreq_id = bytes([self.rreq_id])
+        src_addr = self.address
+        src_seq = bytes([self.seq_no])
+        dst_addr = bytes([int(dst_addr)])
+        dst_seq = bytes([seq_no])
+        hop_cnt = bytes([0])
 
+        rreq_content = msg_type + sender_addr + recv_addr + rreq_id + src_addr + src_seq + dst_addr + dst_seq + hop_cnt
+        self.send_implementation(recv_addr, rreq_content)
+
+        # Buffer the RREQ_ID for PATH_DISCOVERY_TIME. This is used to discard duplicate RREQ messages
+        path_discovery_timer = threading.Timer(
+            AODV_PATH_DISCOVERY_TIME, self.aodv_process_path_discovery_timeout, [self.address, self.rreq_id]
+        )
+        per_node_list = self.rreq_id_list.get(self.address_str, dict())
+        per_node_list[rreq_id] = {
+            'RREQ_ID': rreq_id, 'Timer-Callback': path_discovery_timer
+        }
+        self.rreq_id_list[self.address_str] = per_node_list
+        path_discovery_timer.start()
 
     # # Only for simulation, the implementation with LoRa should be different
-    def send_implementation(self, message: bytes):
+    def send_implementation(
+            self, address: bytes, message: bytes
+    ):
         self.channel_sock.sendto(message, 0, ('localhost', self.channel_port))
 
     def _to_log(self, log_content: str):
@@ -269,7 +297,7 @@ class Client(threading.Thread):
                     command_type = command_list[0]
                     if command_type == "send":
                         self._to_log("Sending command, send to {}, {}".format(command_list[1], command_list[2]))
-                        self.send_message(bytes([int(command_list[1])]), command_list[2])
+                        self.aodv_send_message(command_list[1], command_list[2])
                 elif r is self.comm_sock:
                     command, _ = self.comm_sock.recvfrom(100)
                     command_type = command[0]
