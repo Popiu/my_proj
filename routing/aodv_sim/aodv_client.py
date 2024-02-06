@@ -9,8 +9,14 @@ import time
 # protocol type
 # 0: regular
 # 1: RREQ
+# msg_type(1 byte) send_addr(1 byte) receiver(1 byte) rreq_id(1 byte) src_addr(1 byte) src_seq(1 byte) dst_addr(1 byte) dst_seq(1 byte) hop_cnt(1 byte)
 # 2: RREP
+# msg_type(1 byte) send_addr(1 byte) receiver(1 byte)
 # 3: RERR
+
+
+AODV_PATH_DISCOVERY_TIME    =   30
+AODV_ACTIVE_ROUTE_TIMEOUT   =   300
 
 
 class Client(threading.Thread):
@@ -38,13 +44,15 @@ class Client(threading.Thread):
         self._bind_ports()
     def _process_rreq_msg(self, msg):
         msg_type = msg[0]
-        src_addr = msg[1]
-        src_seq = msg[2]
-        dst_addr = msg[3]
-        dst_seq = msg[4]
-        hop_cnt = msg[5]
-        rreq_id = msg[6]
-        self._to_log("Receive RREQ from {}".format(src_addr))
+        sender_addr = msg[1]
+        rreq_id = msg[2]
+        src_addr = msg[3]
+        src_seq = msg[4]
+        dst_addr = msg[5]
+        dst_seq = msg[6]
+        hop_cnt = msg[7]
+
+        self._to_log("Receive RREQ from {}".format(sender_addr))
 
         # Discard this RREQ if we have already received this before
         if (src_addr in self.rreq_id_list.keys()):
@@ -57,6 +65,18 @@ class Client(threading.Thread):
             per_node_list = self.rreq_id_list[src_addr]
         else:
             per_node_list = dict()
+
+        path_discovery_timer = threading.Timer(
+            AODV_PATH_DISCOVERY_TIME, self.aodv_process_path_discovery_timeout, [src_addr, rreq_id]
+        )
+        per_node_list[rreq_id] = {
+            'RREQ_ID': rreq_id,
+            'Timer-Callback': path_discovery_timer
+        }
+        self.rreq_id_list[src_addr] = {
+            'RREQ_ID_List': per_node_list
+        }
+        path_discovery_timer.start()
 
         #
         # Check if we have a route to the source. If we have, see if we need
@@ -71,17 +91,80 @@ class Client(threading.Thread):
         # If we don't have a route for the originator, add an entry
 
         if src_addr in self.routing_table.keys():
-            pass
+            route = self.routing_table[src_addr]
+            if (int(route['Seq-No']) < src_seq):
+                route['Seq-No'] = src_seq
+                self.aodv_restart_route_timer(route, False)
+            elif (int(route['Seq-No']) == src_seq):
+                if (int(route['Hop-Count']) > hop_cnt):
+                    route['Hop-Count'] = hop_cnt
+                    route['Next-Hop'] = sender_addr
+                    self.aodv_restart_route_timer(route, False)
+            elif (int(route['Seq-No']) == 0):
+                route['Seq-No'] = src_seq
+                self.aodv_restart_route_timer(route, False)
         else:
             self.routing_table[src_addr] = {
                 'Destination': str(src_addr),
-                'Next-Hop': str(sender),
-                'Seq-No': str(orig_seq_no),
-                'Hop-Count': str(hop_count),
+                'Next-Hop': str(sender_addr),
+                'Seq-No': str(src_seq),
+                'Hop-Count': str(hop_cnt),
                 'Status': 'Active'
             }
+            self.aodv_restart_route_timer(self.routing_table[src_addr], True)
 
+        if (self.address == dst_addr):
+            self.aodv_send_rrep()
+            # self.aodv_send_rrep(orig, sender, dest, dest, 0, 0)
 
+        if (dst_addr in self.routing_table.keys()):
+            pass
+        else:
+            pass
+            # rebroadcast rreq
+    def aodv_process_path_discovery_timeout(self, node, rreq_id):
+
+        # Remove the buffered RREQ_ID for the given node
+        if node in self.rreq_id_list.keys():
+            node_list = self.rreq_id_list[node]
+            per_node_rreq_id_list = node_list['RREQ_ID_List']
+            if rreq_id in per_node_rreq_id_list.keys():
+                per_node_rreq_id_list.pop(rreq_id)
+    def aodv_restart_route_timer(self, route, create):
+        if (create == False):
+            timer = route['Lifetime']
+            timer.cancel()
+
+        timer = threading.Timer(
+            AODV_ACTIVE_ROUTE_TIMEOUT, self.aodv_process_route_timeout, [route]
+        )
+        route['Lifetime'] = timer
+        route['Status'] = 'Active'
+        timer.start()
+    def aodv_send_rrep(self, rrep_dest, rrep_nh, rrep_src, rrep_int_node, dest_seq_no, hop_count):
+        #     def aodv_send_rrep(self, rrep_dest, rrep_nh, rrep_src, rrep_int_node, dest_seq_no, hop_count):
+        #         # orig, sender, dest, dest, 0, 0
+        #         # orig, sender, self.node_id, dest, route_dest_seq_no, int(route['Hop-Count']
+        if (rrep_src == rrep_int_node):
+            # Increment the sequence number and reset the hop count
+            self.seq_no = self.seq_no + 1
+            dest_seq_no = self.seq_no
+            hop_count = 0
+        MSG_TYPE = bytes([2])
+        SENDER_ADDR = self.address
+        DST_ADDR = bytes([rrep_int_node])
+        DST_SEQ = bytes([dest_seq_no])
+        SRC_DST = rrep_dest
+        HOP_CNT = hop_count
+        message = MSG_TYPE + SENDER_ADDR + DST_ADDR + DST_SEQ + SRC_DST + HOP_CNT
+
+        self.send_implementation(message)
+    def aodv_process_route_timeout(self, route):
+        # Remove the route from the routing table
+        key = route['Destination']
+        self.routing_table.pop(key)
+
+        self._to_log("aodv_process_route_timeout: removing " + key + " from the routing table.")
     def send_message(
             self, address: bytes, message: bytes
     ):
@@ -95,7 +178,7 @@ class Client(threading.Thread):
             self.seq_no = self.seq_no + 1
             self.rreq_id = self.rreq_id + 1
 
-            rreq_content = self.RREQ_CONTENT(address, 255)  # 255 means -1
+            rreq_content = self.RREQ_CONTENT(address, 0)
 
             self.send_implementation(rreq_content)
 
@@ -106,7 +189,7 @@ class Client(threading.Thread):
         DST_SEQ = bytes([seq_no])
         HOP_CNT = bytes([0])
         RREQ_ID = bytes([self.rreq_id])
-        return MSG_TYPE + SRC_ADDR + SRC_SEQ + DST_ADDR + DST_SEQ + HOP_CNT + RREQ_ID
+        return MSG_TYPE + SRC_ADDR + RREQ_ID + SRC_ADDR + SRC_SEQ + DST_ADDR + DST_SEQ + HOP_CNT
 
 
     # # Only for simulation, the implementation with LoRa should be different

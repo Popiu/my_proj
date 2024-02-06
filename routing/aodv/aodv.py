@@ -496,6 +496,8 @@ class aodv(threading.Thread):
 
     # Send an RREP message back to the RREQ originator
     def aodv_send_rrep(self, rrep_dest, rrep_nh, rrep_src, rrep_int_node, dest_seq_no, hop_count):
+        # orig, sender, dest, dest, 0, 0
+        # orig, sender, self.node_id, dest, route_dest_seq_no, int(route['Hop-Count']
         # 
         # Check if we are the destination in the RREP. If not, use the
         # parameters passed.
