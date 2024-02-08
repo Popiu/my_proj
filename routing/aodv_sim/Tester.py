@@ -13,7 +13,9 @@ class Tester:
         self.input_hint = (
             "Enter a command:\n"
             "1. H or h: Help\n"
-            "2. send <node_id_A> <node_id_B> <message> : Send message from A to B.\n")
+            "2. send <node_id_A> <node_id_B> <message> : Send message from A to B.\n"
+            "3. show <node_id_A>: show routing table of A\n"
+        )
         self.log_dir = os.path.join(log_dir, "logs")
         self.time_stamp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
 
@@ -76,5 +78,8 @@ class Tester:
                     node_id_A, msg_type="send",
                     contents=contents
                 )
+            elif command[0] == "show":
+                node_id_A = int(command[1])
+                self.node_list[node_id_A].show_routing_table()
             else:
                 print("Invalid command.")

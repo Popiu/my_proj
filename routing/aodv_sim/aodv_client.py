@@ -13,7 +13,7 @@ import time
 # msg_type(1 byte) send_addr(1 byte) receiver(1 byte)
 # 3: RERR
 
-
+AODV_HELLO_INTERVAL = 10
 AODV_PATH_DISCOVERY_TIME = 30
 AODV_ACTIVE_ROUTE_TIMEOUT = 300
 
@@ -111,9 +111,9 @@ class Client(threading.Thread):
             else:
                 self.routing_table[dst_addr] = {
                     'Destination': dst_addr,
-                    'Next-Hop': sender_addr,
+                    'Next-Hop': str(sender_addr),
                     'Seq-No': str(dst_seq),
-                    'Hop-Count': hop_cnt,
+                    'Hop-Count': str(hop_cnt),
                     'Status': 'Active'
                 }
                 self.aodv_restart_route_timer(self.routing_table[dst_addr], True)
@@ -122,7 +122,7 @@ class Client(threading.Thread):
                 msg_dst = message[2]
                 if (msg_dst == int(dst_addr)):
                     # send this msg to the dst_addr
-                    next_hop = sender_addr
+                    next_hop = str(sender_addr)
                     self.send_implementation(next_hop, message)
                     self.pending_msg_q.remove(message)
         else:
@@ -135,9 +135,9 @@ class Client(threading.Thread):
             else:
                 self.routing_table[dst_addr] = {
                     'Destination': dst_addr,
-                    'Next-Hop': sender_addr,
+                    'Next-Hop': str(sender_addr),
                     'Seq-No': str(dst_seq),
-                    'Hop-Count': hop_cnt,
+                    'Hop-Count': str(hop_cnt),
                 }
                 self.aodv_restart_route_timer(self.routing_table[dst_addr], True)
             route = self.routing_table[src_addr]
@@ -163,6 +163,7 @@ class Client(threading.Thread):
     ):
         addr_byte = bytes([int(address)])
         message_content = bytes([0]) + self.address + addr_byte + message.encode('utf-8')
+
         if address in self.routing_table.keys():
             next_hop = self.routing_table[address]['Next-Hop']
             self.send_implementation(next_hop, message_content)
@@ -173,7 +174,7 @@ class Client(threading.Thread):
             self._to_log("Broadcast RREQ to find the route to {}.\n".format(address))
 
             # Buffer the message and resend it once RREP is received
-            self.pending_msg_q.append(message)
+            self.pending_msg_q.append(message_content)
 
     def aodv_send_rreq(
             self, dst_addr: str, seq_no: int
@@ -252,8 +253,8 @@ class Client(threading.Thread):
                 self.aodv_restart_route_timer(route, False)
             elif (int(route['Seq-No']) == src_seq):
                 if (int(route['Hop-Count']) > hop_cnt):
-                    route['Hop-Count'] = hop_cnt
-                    route['Next-Hop'] = sender_addr
+                    route['Hop-Count'] = str(hop_cnt)
+                    route['Next-Hop'] = str(sender_addr)
                     self.aodv_restart_route_timer(route, False)
         else:
             self.routing_table[src_addr] = {
@@ -267,6 +268,7 @@ class Client(threading.Thread):
 
         if (int.from_bytes(self.address, byteorder="big") == int(dst_addr)):
             self.aodv_send_rrep(src_addr, sender_addr, dst_addr, dst_addr, 0, 0)
+            return
             # self.aodv_send_rrep(orig, sender, dest, dest, 0, 0)
 
         if (dst_addr in self.routing_table.keys()):
@@ -274,6 +276,7 @@ class Client(threading.Thread):
             route_dest_seq_no = int(route['Seq-No'])
             if route_dest_seq_no >= dst_seq:
                 self.aodv_send_rrep(src_addr, sender_addr, self.address_str, dst_addr, route_dest_seq_no, hop_cnt)
+                return
         else:
             # Rebroadcast the RREQ
             self.aodv_forward_rreq(msg)
@@ -347,7 +350,23 @@ class Client(threading.Thread):
 
         self._to_log("Successfully start the client.\n")
 
+    def show_routing_table(self):
+        print("")
+        print("There are " + str(len(self.routing_table)) + " active route(s) in the routing-table")
+        print("")
+
+        print("Destination     Next-Hop     Seq-No     Hop-Count     Status")
+        print("------------------------------------------------------------")
+        for r in self.routing_table.values():
+            print(r['Destination'] + "              " + r['Next-Hop'] + "           " + r['Seq-No'] + "          " + r[
+                'Hop-Count'] + "             " + r['Status'])
+        print("")
     def run(self):
+
+        # Start the hello timer again
+        self.hello_timer = threading.Timer(AODV_HELLO_INTERVAL, self.aodv_send_hello_message, ())
+        self.hello_timer.start()
+
         # get input
         inputs = [self.control_sock, self.comm_sock]
         output = []
@@ -363,12 +382,19 @@ class Client(threading.Thread):
                     if command_type == "send":
                         self._to_log("Sending command, send to {}, {}\n".format(command_list[1], command_list[2]))
                         self.aodv_send_message(command_list[1], command_list[2])
+                    elif command_type == "show":
+                        self.show_routing_table()
                 elif r is self.comm_sock:
                     command, _ = self.comm_sock.recvfrom(100)
                     command_type = command[0]
-                    if command_type == 1:
-                        self.aodv_process_rreq_msg(command)
-                    elif command_type == 2:
-                        self.aodv_process_rrep_msg(command)
+                    recv_addr = command[2]
+                    if recv_addr == int(self.address_str) or recv_addr == 255:
+                        if command_type == 0:
+                            # regular message
+                            self._to_log("Receive packet, {}\n".format(str(command)))
+                        elif command_type == 1:
+                            self.aodv_process_rreq_msg(command)
+                        elif command_type == 2:
+                            self.aodv_process_rrep_msg(command)
                     #     self.routing_table.add_routing_entry(routing_entry(command[1:]))
                     # self._to_log("Receive packet, {}".format(str(command)))
