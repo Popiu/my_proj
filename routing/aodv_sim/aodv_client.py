@@ -79,7 +79,7 @@ class Client(threading.Thread):
         dst_addr = bytes([int(rrep_int_node)])
         dst_seq = bytes([dest_seq_no])
         src_dst = bytes([int(rrep_dest)])
-        hop_cnt = hop_count
+        hop_cnt = bytes([hop_count])
         message = msg_type + sender_addr + recv_addr + dst_addr + dst_seq + src_dst + hop_cnt
 
         self.send_implementation(rrep_nh, message)
@@ -99,7 +99,7 @@ class Client(threading.Thread):
         src_addr = str(src_addr)
         dst_addr = str(dst_addr)
 
-        self._to_log("Receive RREP from {}".format(sender_addr))
+        self._to_log("Receive RREP from {}\n".format(sender_addr))
 
         if (int(self.address_str) == int(src_addr)):
             if (dst_addr in self.routing_table.keys()):
@@ -112,11 +112,44 @@ class Client(threading.Thread):
                 self.routing_table[dst_addr] = {
                     'Destination': dst_addr,
                     'Next-Hop': sender_addr,
-                    'Seq-No': dst_seq,
+                    'Seq-No': str(dst_seq),
                     'Hop-Count': hop_cnt,
                     'Status': 'Active'
                 }
                 self.aodv_restart_route_timer(self.routing_table[dst_addr], True)
+            # check if we have any pending messages to this destination
+            for message in self.pending_msg_q:
+                msg_dst = message[2]
+                if (msg_dst == int(dst_addr)):
+                    # send this msg to the dst_addr
+                    next_hop = sender_addr
+                    self.send_implementation(next_hop, message)
+                    self.pending_msg_q.remove(message)
+        else:
+            # forward this rrep
+            if (dst_addr in self.routing_table.keys()):
+                route = self.routing_table[dst_addr]
+                route["Seq-No"] = str(dst_seq)
+                next_hop = route['Next-Hop']
+                self.send_implementation(next_hop, msg)
+            else:
+                self.routing_table[dst_addr] = {
+                    'Destination': dst_addr,
+                    'Next-Hop': sender_addr,
+                    'Seq-No': str(dst_seq),
+                    'Hop-Count': hop_cnt,
+                }
+                self.aodv_restart_route_timer(self.routing_table[dst_addr], True)
+            route = self.routing_table[src_addr]
+            next_hop = route['Next-Hop']
+            self.aodv_forward_rrep(next_hop, msg)
+
+    def aodv_forward_rrep(self, next_hop, msg):
+        msg_bytearray = bytearray(msg)
+        msg_bytearray[1] = int(self.address_str)
+        msg_bytearray[2] = int(next_hop)
+        msg = bytes(msg_bytearray)
+        self.send_implementation(next_hop, msg)
 
     def aodv_process_route_timeout(self, route):
         # Remove the route from the routing table
@@ -191,13 +224,13 @@ class Client(threading.Thread):
         dst_addr = str(dst_addr)
         sender_addr = str(sender_addr)
 
-        self._to_log("Receive RREQ from {}".format(sender_addr))
+        self._to_log("Receive RREQ from {}\n".format(sender_addr))
 
         # Discard this RREQ if we have already received this before
         if (src_addr in self.rreq_id_list.keys()):
             per_node_list = self.rreq_id_list[src_addr]
             if rreq_id in per_node_list.keys():
-                self._to_log("Discard this RREQ")
+                self._to_log("Discard this RREQ\n")
 
         # This is a new RREQ message. Buffer it first
         per_node_list = self.rreq_id_list.get(src_addr, dict())
@@ -215,7 +248,7 @@ class Client(threading.Thread):
         if src_addr in self.routing_table.keys():
             route = self.routing_table[src_addr]
             if (int(route['Seq-No']) < src_seq):
-                route['Seq-No'] = src_seq
+                route['Seq-No'] = str(src_seq)
                 self.aodv_restart_route_timer(route, False)
             elif (int(route['Seq-No']) == src_seq):
                 if (int(route['Hop-Count']) > hop_cnt):
@@ -245,6 +278,10 @@ class Client(threading.Thread):
             # Rebroadcast the RREQ
             self.aodv_forward_rreq(msg)
     def aodv_forward_rreq(self, msg):
+        msg_bytearray = bytearray(msg)
+        msg_bytearray[1] = int(self.address_str)
+        msg_bytearray[2] = 255
+        msg = bytes(msg_bytearray)
         self.send_implementation(bytes([255]), msg)
     # # Only for simulation, the implementation with LoRa should be different
     def send_implementation(
@@ -324,12 +361,14 @@ class Client(threading.Thread):
                     command_list = re.split(':', command_str)
                     command_type = command_list[0]
                     if command_type == "send":
-                        self._to_log("Sending command, send to {}, {}".format(command_list[1], command_list[2]))
+                        self._to_log("Sending command, send to {}, {}\n".format(command_list[1], command_list[2]))
                         self.aodv_send_message(command_list[1], command_list[2])
                 elif r is self.comm_sock:
                     command, _ = self.comm_sock.recvfrom(100)
                     command_type = command[0]
                     if command_type == 1:
                         self.aodv_process_rreq_msg(command)
+                    elif command_type == 2:
+                        self.aodv_process_rrep_msg(command)
                     #     self.routing_table.add_routing_entry(routing_entry(command[1:]))
                     # self._to_log("Receive packet, {}".format(str(command)))
