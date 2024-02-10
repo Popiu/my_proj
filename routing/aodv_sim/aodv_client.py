@@ -4,6 +4,7 @@ import socket, select
 import os
 import re
 import time
+import platform
 
 # protocol type
 # 0: regular
@@ -12,8 +13,11 @@ import time
 # 2: RREP
 # msg_type(1 byte) send_addr(1 byte) receiver(1 byte)
 # 3: RERR
+#
+# 4: HELLO
 
 AODV_HELLO_INTERVAL = 10
+AODV_HELLO_TIMEOUT = 30
 AODV_PATH_DISCOVERY_TIME = 30
 AODV_ACTIVE_ROUTE_TIMEOUT = 300
 
@@ -31,6 +35,7 @@ class Client(threading.Thread):
         self.rreq_id = 0  # maintaining the rreq id
         self.rreq_id_list = {}
         self.pending_msg_q = []
+        self.neighbors = dict()
 
         # Only for simulation
         self.client_config = client_config
@@ -43,7 +48,6 @@ class Client(threading.Thread):
         self.log_file = self.log_dir + "/log.txt"
 
         self._bind_ports()
-
 
     def aodv_process_path_discovery_timeout(
             self, address: str, rreq_id: int
@@ -69,6 +73,9 @@ class Client(threading.Thread):
         #     def aodv_send_rrep(self, rrep_dest, rrep_nh, rrep_src, rrep_int_node, dest_seq_no, hop_count):
         #         # orig, sender, dest, dest, 0, 0
         #         # orig, sender, self.node_id, dest, route_dest_seq_no, int(route['Hop-Count']
+
+        self._to_log("Send RREP to {}\n".format(recv_addr))
+
         if (rrep_src == rrep_int_node):
             self.seq_no = self.seq_no + 1
             dest_seq_no = self.seq_no
@@ -82,7 +89,7 @@ class Client(threading.Thread):
         hop_cnt = bytes([hop_count])
         message = msg_type + sender_addr + recv_addr + dst_addr + dst_seq + src_dst + hop_cnt
 
-        self.send_implementation(rrep_nh, message)
+        self.send_implementation(recv_addr, message)
 
     def aodv_process_rrep_msg(self, msg):
         msg_type = msg[0]
@@ -123,7 +130,7 @@ class Client(threading.Thread):
                 if (msg_dst == int(dst_addr)):
                     # send this msg to the dst_addr
                     next_hop = str(sender_addr)
-                    self.send_implementation(next_hop, message)
+                    self.send_implementation(bytes([int(next_hop)]), message)
                     self.pending_msg_q.remove(message)
         else:
             # forward this rrep
@@ -166,7 +173,7 @@ class Client(threading.Thread):
 
         if address in self.routing_table.keys():
             next_hop = self.routing_table[address]['Next-Hop']
-            self.send_implementation(next_hop, message_content)
+            self.send_implementation(bytes([int(next_hop)]), message_content)
             self._to_log(
                 "Send message to " + address + " through " + next_hop + ", since it is in the routing table.\n")
         else:
@@ -232,6 +239,7 @@ class Client(threading.Thread):
             per_node_list = self.rreq_id_list[src_addr]
             if rreq_id in per_node_list.keys():
                 self._to_log("Discard this RREQ\n")
+                return
 
         # This is a new RREQ message. Buffer it first
         per_node_list = self.rreq_id_list.get(src_addr, dict())
@@ -280,17 +288,20 @@ class Client(threading.Thread):
         else:
             # Rebroadcast the RREQ
             self.aodv_forward_rreq(msg)
+
     def aodv_forward_rreq(self, msg):
         msg_bytearray = bytearray(msg)
         msg_bytearray[1] = int(self.address_str)
         msg_bytearray[2] = 255
         msg = bytes(msg_bytearray)
         self.send_implementation(bytes([255]), msg)
+
     # # Only for simulation, the implementation with LoRa should be different
     def send_implementation(
             self, address: bytes, message: bytes
     ):
-        self.channel_sock.sendto(message, 0, ('localhost', self.channel_port))
+        full_content = address + message
+        self.channel_sock.sendto(full_content, 0, ('localhost', self.channel_port))
 
     def _to_log(self, log_content: str):
         time_stamp = time.strftime("%Y-%m-%d: %H:%M:%S", time.localtime())
@@ -299,35 +310,39 @@ class Client(threading.Thread):
             f.write(log_content)
 
     def _bind_ports(self):
-        # kill the process that is running binding these commands, print warnings
-        find_comm_process = os.popen('lsof -i:{}'.format(self.comm_port))
-        find_channel_process = os.popen('lsof -i:{}'.format(self.channel_port))
-        find_control_process = os.popen('lsof -i:{}'.format(self.control_port))
+        # determine what OS is running
+        os_sys = platform.system().lower()
 
-        comm_list = find_comm_process.readlines()
-        channel_list = find_channel_process.readlines()
-        control_list = find_control_process.readlines()
+        if os_sys == "linux" or os_sys == "macos":
+            # kill the process that is running binding these commands, print warnings
+            find_comm_process = os.popen('lsof -i:{}'.format(self.comm_port))
+            find_channel_process = os.popen('lsof -i:{}'.format(self.channel_port))
+            find_control_process = os.popen('lsof -i:{}'.format(self.control_port))
 
-        if len(comm_list) != 0:
-            find_values = comm_list[1].split(" ")[2]
-            self._to_log(
-                "Communication port is occupied by process {} , "
-                "now kill it.\n".format(find_values))
-            os.system("kill {}".format(find_values))
+            comm_list = find_comm_process.readlines()
+            channel_list = find_channel_process.readlines()
+            control_list = find_control_process.readlines()
 
-        if len(channel_list) != 0:
-            find_values = channel_list[1].split(" ")[2]
-            self._to_log(
-                "Channel port is occupied by process {}, "
-                "now kill it.\n".format(find_values))
-            os.system("kill {}".format(find_values))
+            if len(comm_list) != 0:
+                find_values = comm_list[1].split(" ")[2]
+                self._to_log(
+                    "Communication port is occupied by process {} , "
+                    "now kill it.\n".format(find_values))
+                os.system("kill {}".format(find_values))
 
-        if len(control_list) != 0:
-            find_values = control_list[1].split(" ")[2]
-            self._to_log(
-                "Control port is occupied by process {}, "
-                "now kill it.\n".format(find_values))
-            os.system("kill {}".format(find_values))
+            if len(channel_list) != 0:
+                find_values = channel_list[1].split(" ")[2]
+                self._to_log(
+                    "Channel port is occupied by process {}, "
+                    "now kill it.\n".format(find_values))
+                os.system("kill {}".format(find_values))
+
+            if len(control_list) != 0:
+                find_values = control_list[1].split(" ")[2]
+                self._to_log(
+                    "Control port is occupied by process {}, "
+                    "now kill it.\n".format(find_values))
+                os.system("kill {}".format(find_values))
 
         self.comm_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.comm_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -361,9 +376,112 @@ class Client(threading.Thread):
             print(r['Destination'] + "              " + r['Next-Hop'] + "           " + r['Seq-No'] + "          " + r[
                 'Hop-Count'] + "             " + r['Status'])
         print("")
+
+    def aodv_send_hello_message(self):
+        self._to_log("Start sending hello message\n")
+
+        hello_msg = bytes([4]) + self.address + bytes([255])
+        self.send_implementation(bytes([255]), hello_msg)
+        self._to_log("Send hello message to " + str(255) + "\n")
+
+        # Restart the timer
+        self.hello_timer.cancel()
+        self.hello_timer = threading.Timer(AODV_HELLO_INTERVAL, self.aodv_send_hello_message, ())
+        self.hello_timer.start()
+
+    def aodv_process_hello_message(self, message):
+        sender_addr = message[1]
+        sender_addr = str(sender_addr)
+
+        self._to_log("Receive hello message from {}\n".format(sender_addr))
+
+        if (sender_addr in self.neighbors.keys()):
+            neighbor = self.neighbors[sender_addr]
+            timer = neighbor['Timer-Callback']
+            timer.cancel()
+            timer = threading.Timer(AODV_HELLO_TIMEOUT,
+                                    self.aodv_process_neighbor_timeout, [sender_addr])
+            self.neighbors[sender_addr] = {'Neighbor': sender_addr,
+                                           'Timer-Callback': timer}
+            timer.start()
+            # Restart the lifetime timer
+            route = self.routing_table[sender_addr]
+            self.aodv_restart_route_timer(route, False)
+        else:
+            timer = threading.Timer(AODV_HELLO_TIMEOUT,
+                                    self.aodv_process_neighbor_timeout, [sender_addr])
+            self.neighbors[sender_addr] = {'Neighbor': sender_addr,
+                                           'Timer-Callback': timer}
+            timer.start()
+
+        if (sender_addr in self.routing_table.keys()):
+            route = self.routing_table[sender_addr]
+            self.aodv_restart_route_timer(route, False)
+        else:
+            self.routing_table[sender_addr] = {
+                'Destination': sender_addr,
+                'Next-Hop': sender_addr,
+                'Seq-No': '1',
+                'Hop-Count': '1',
+                'Status': 'Active'}
+            self.aodv_restart_route_timer(self.routing_table[sender_addr], True)
+
+    def aodv_process_neighbor_timeout(self, neighbor):
+        # Update the routing table. Mark the route as inactive.
+        route = self.routing_table[neighbor]
+        route['Status'] = 'Inactive'
+
+        # log this event
+        self._to_log("aodv_process_neighbor_timeout: " + neighbor + " is inactive.\n")
+
+        # Send an RERR to all the neighbors
+        self.aodv_send_rerr(neighbor, int(route['Seq-No']))
+
+        # Try to repair the route
+        dest_seq_no = int(route['Seq-No']) + 1
+        self.aodv_send_rreq(neighbor, dest_seq_no)
+
+    def aodv_send_rerr(self, dest_addr, dest_seq_no):
+        msg_type = bytes([3])
+        sender_addr = self.address
+        recv_addr = bytes([255])
+        dst_addr = bytes([int(dest_addr)])
+        dst_seq = bytes([dest_seq_no])
+        msg = msg_type + sender_addr + recv_addr + dst_addr + dst_seq
+
+        for n in self.neighbors.keys():
+            self.send_implementation(bytes([int(n)]), msg)
+
+        if (dst_addr in self.routing_table.keys()):
+            route = self.routing_table[dst_addr]
+            if (route['Status'] == 'Active' and route['Next-Hop'] == sender_addr):
+                # Mark the destination as inactive
+                route['Status'] = "Inactive"
+
+                # Forward the RERR to all the neighbors
+                self.aodv_forward_rerr(msg)
+            # else:
+            #     logging.debug("['" + message_type + "', 'Ignoring RERR for " + dest + " from " + sender + "']")
+
+    def aodv_forward_rerr(self, msg):
+        msg_bytearray = bytearray(msg)
+        msg_bytearray[1] = int(self.address_str)
+        msg_bytearray[2] = 255
+        msg = bytes(msg_bytearray)
+        for n in self.neighbors.keys():
+            self.send_implementation(bytes([n]), msg)
+
+    def aodv_process_rerr_msg(self, msg):
+        sender = msg[1]
+        dest = msg[3]
+        dest_seq_no = int(msg[4])
+
+        if (int(self.address_str) == dest):
+            return
+
     def run(self):
 
-        # Start the hello timer again
+        # Start the hello timer
         self.hello_timer = threading.Timer(AODV_HELLO_INTERVAL, self.aodv_send_hello_message, ())
         self.hello_timer.start()
 
@@ -396,5 +514,9 @@ class Client(threading.Thread):
                             self.aodv_process_rreq_msg(command)
                         elif command_type == 2:
                             self.aodv_process_rrep_msg(command)
+                        elif command_type == 3:
+                            self.aodv_process_rerr_msg(command)
+                        elif command_type == 4:
+                            self.aodv_process_hello_message(command)
                     #     self.routing_table.add_routing_entry(routing_entry(command[1:]))
                     # self._to_log("Receive packet, {}".format(str(command)))

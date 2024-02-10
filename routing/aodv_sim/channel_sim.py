@@ -25,28 +25,53 @@ class ChannelSim(threading.Thread):
 
     def send_message(self, src_node_id, message):
         src_pos = self.full_config["node_coords"][src_node_id]
-        for dst_node_id in range(len(self.node_list)):
-            if dst_node_id != src_node_id:
-                dst_pos = self.full_config["node_coords"][dst_node_id]
-                distance = (dst_pos[0] - src_pos[0]) ** 2 + (dst_pos[1] - src_pos[1]) ** 2
-                if distance <= self.full_config["max_reach_dist"]:
-                    self._to_log(
-                        "Sending message from {} to {}, distance: {}\n".format(
-                        src_node_id, dst_node_id, distance
-                        )
-                    )
-                    # new thread
-                    send_thread = threading.Thread(
-                        target=self.send_message_to,
-                        args=(dst_node_id, message, distance)
-                    )
-                    send_thread.start()
-                else:
-                    self._to_log(
-                        "No sending message from {} to {}, distance: {}. (out of range)\n".format(
+        dst_addr = message[0]
+        message = message[1:]
+
+        if dst_addr == 255:
+            for dst_node_id in range(len(self.node_list)):
+                if dst_node_id != src_node_id:
+                    dst_pos = self.full_config["node_coords"][dst_node_id]
+                    distance = (dst_pos[0] - src_pos[0]) ** 2 + (dst_pos[1] - src_pos[1]) ** 2
+                    if distance <= self.full_config["max_reach_dist"]:
+                        self._to_log(
+                            "Sending message from {} to {}, distance: {}\n".format(
                             src_node_id, dst_node_id, distance
+                            )
                         )
+                        # new thread
+                        send_thread = threading.Thread(
+                            target=self.send_message_to,
+                            args=(dst_node_id, message, distance)
+                        )
+                        send_thread.start()
+                    else:
+                        self._to_log(
+                            "No sending message from {} to {}, distance: {}. (out of range)\n".format(
+                                src_node_id, dst_node_id, distance
+                            )
+                        )
+        else:
+            dst_pos = self.full_config["node_coords"][dst_addr]
+            distance = (dst_pos[0] - src_pos[0]) ** 2 + (dst_pos[1] - src_pos[1]) ** 2
+            if distance <= self.full_config["max_reach_dist"]:
+                self._to_log(
+                    "Sending message from {} to {}, distance: {}\n".format(
+                        src_node_id, dst_addr, distance
                     )
+                )
+                # new thread
+                send_thread = threading.Thread(
+                    target=self.send_message_to,
+                    args=(dst_addr, message, distance)
+                )
+                send_thread.start()
+            else:
+                self._to_log(
+                    "No sending message from {} to {}, distance: {}. (out of range)\n".format(
+                        src_node_id, dst_addr, distance
+                    )
+                )
 
     def send_message_to(self, dst_node_id, message, delay):
         dst_node = self.node_list[dst_node_id]
