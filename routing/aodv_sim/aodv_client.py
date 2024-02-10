@@ -38,6 +38,7 @@ class Client(threading.Thread):
         self.neighbors = dict()
 
         # Only for simulation
+        self.log_on = True
         self.client_config = client_config
         self.comm_port = client_config["comm_port"]
         self.control_port = client_config["control_port"]
@@ -46,6 +47,7 @@ class Client(threading.Thread):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
         self.log_file = self.log_dir + "/log.txt"
+        self.hello_rerr_file = self.log_dir + "/hello_rerr.txt"
 
         self._bind_ports()
 
@@ -156,7 +158,7 @@ class Client(threading.Thread):
         msg_bytearray[1] = int(self.address_str)
         msg_bytearray[2] = int(next_hop)
         msg = bytes(msg_bytearray)
-        self.send_implementation(next_hop, msg)
+        self.send_implementation(bytes([int(next_hop)]), msg)
 
     def aodv_process_route_timeout(self, route):
         # Remove the route from the routing table
@@ -303,11 +305,15 @@ class Client(threading.Thread):
         full_content = address + message
         self.channel_sock.sendto(full_content, 0, ('localhost', self.channel_port))
 
-    def _to_log(self, log_content: str):
-        time_stamp = time.strftime("%Y-%m-%d: %H:%M:%S", time.localtime())
-        with open(self.log_file, 'a') as f:
-            f.write("[{}]:\t".format(time_stamp))
-            f.write(log_content)
+    def _to_log(self, log_content: str, use_log_file: str = None):
+        if use_log_file is None:
+            use_log_file = self.log_file
+
+        if self.log_on:
+            time_stamp = time.strftime("%Y-%m-%d: %H:%M:%S", time.localtime())
+            with open(use_log_file, 'a') as f:
+                f.write("[{}]:\t".format(time_stamp))
+                f.write(log_content)
 
     def _bind_ports(self):
         # determine what OS is running
@@ -378,11 +384,13 @@ class Client(threading.Thread):
         print("")
 
     def aodv_send_hello_message(self):
-        self._to_log("Start sending hello message\n")
 
         hello_msg = bytes([4]) + self.address + bytes([255])
         self.send_implementation(bytes([255]), hello_msg)
-        self._to_log("Send hello message to " + str(255) + "\n")
+        self._to_log(
+            "Send hello message to 255.\n\n",
+            use_log_file=self.hello_rerr_file
+        )
 
         # Restart the timer
         self.hello_timer.cancel()
@@ -393,9 +401,9 @@ class Client(threading.Thread):
         sender_addr = message[1]
         sender_addr = str(sender_addr)
 
-        self._to_log("Receive hello message from {}\n".format(sender_addr))
+        self._to_log("Receive hello message from {}.\n\n".format(sender_addr), use_log_file=self.hello_rerr_file)
 
-        if (sender_addr in self.neighbors.keys()):
+        if sender_addr in self.neighbors.keys():
             neighbor = self.neighbors[sender_addr]
             timer = neighbor['Timer-Callback']
             timer.cancel()
@@ -518,5 +526,9 @@ class Client(threading.Thread):
                             self.aodv_process_rerr_msg(command)
                         elif command_type == 4:
                             self.aodv_process_hello_message(command)
+                    else:
+                        if command_type == 0:
+                            next_hop = self.routing_table[str(recv_addr)]['Next-Hop']
+                            self.send_implementation(bytes([int(next_hop)]), command)
                     #     self.routing_table.add_routing_entry(routing_entry(command[1:]))
                     # self._to_log("Receive packet, {}".format(str(command)))
