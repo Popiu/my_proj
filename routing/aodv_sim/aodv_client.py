@@ -74,7 +74,7 @@ class Client(threading.Thread):
         #         # orig, sender, dest, dest, 0, 0
         #         # orig, sender, self.node_id, dest, route_dest_seq_no, int(route['Hop-Count']
 
-        self._to_log("Send RREP to {}\n".format(recv_addr))
+        self._to_log("Send RREP to {}\n".format(rrep_nh))
 
         if (rrep_src == rrep_int_node):
             self.seq_no = self.seq_no + 1
