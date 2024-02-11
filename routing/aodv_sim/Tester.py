@@ -15,6 +15,7 @@ class Tester:
             "1. H or h: Help\n"
             "2. send <node_id_A> <node_id_B> <message> : Send message from A to B.\n"
             "3. show <node_id_A>: show routing table of A\n"
+            "4. down <node_id_A>: turn down node A\n"
         )
         self.log_dir = os.path.join(log_dir, "logs")
         self.time_stamp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
@@ -41,6 +42,11 @@ class Tester:
         self.channels = ChannelSim(self.test_config, self.node_list, log_dir=log_dir)
         self.channels.start()
 
+    def turn_down_node(self, node_id):
+        self.channels.coords[node_id] = (1000, 1000)
+
+    def turn_up_node(self, node_id):
+        self.channels.coords[node_id] = self.test_config["node_coords"][node_id]
 
     def send_control_message(
             self, node: int, msg_type: str, contents: str
@@ -81,5 +87,12 @@ class Tester:
             elif command[0] == "show":
                 node_id_A = int(command[1])
                 self.node_list[node_id_A].show_routing_table()
+
+            elif command[0] == "down":
+                node_id_A = int(command[1])
+                self.turn_down_node(node_id_A)
+            elif command[0] == "up":
+                node_id_A = int(command[1])
+                self.turn_up_node(node_id_A)
             else:
                 print("Invalid command.")
