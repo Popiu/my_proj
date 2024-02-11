@@ -3,6 +3,7 @@ import threading
 import re
 import time
 import os
+import  copy
 
 
 class ChannelSim(threading.Thread):
@@ -14,7 +15,7 @@ class ChannelSim(threading.Thread):
         threading.Thread.__init__(self)
         self.node_list = node_list
         self.full_config = full_config
-        self.coords = full_config["node_coords"]
+        self.coords = copy.deepcopy(full_config["node_coords"])
         self.log_dir = log_dir
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
