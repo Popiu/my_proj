@@ -31,3 +31,5 @@
 | RREP_SRC  | src_addr    | 1    | RREP源地址，为发出RREQ的地址   |
 | Hop_Count | hop_cnt     | 1    | 跳数                           |
 
+# 实验操作说明
+## 定期路由信息刷新与错误报告
